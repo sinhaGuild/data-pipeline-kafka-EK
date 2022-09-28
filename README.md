@@ -1,7 +1,4 @@
-<div>
-<img class='banner' src="https://img.rawpixel.com/private/static/images/website/2022-05/pdmonet-waterlilyrob-job582-2.jpg?w=800&dpr=1&fit=default&crop=default&q=65&vib=3&con=3&usm=15&bg=F4F4F3&s=b6b1c2f88fc8b1cf87439ffa079d030a" style=" aspect-ratio: 1:3; border: solid 2.5em antiquewhite;"></img>
-<hr>
-</div>
+![](https://img.rawpixel.com/private/static/images/website/2022-05/pdmonet-waterlilyrob-job582-2.jpg?w=800&dpr=1&fit=default&crop=default&q=65&vib=3&con=3&usm=15&bg=F4F4F3&s=b6b1c2f88fc8b1cf87439ffa079d030a)
 
 #### DEMO STORYBOARD
 
