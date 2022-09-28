@@ -248,13 +248,13 @@ services:
     container_name: elasticsearch
     ports:
       - 9200:9200
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-      memlock:
-        soft: -1
-        hard: -1        
+    # ulimits:
+    #   nofile:
+    #     soft: 65535
+    #     hard: 65535
+    #   memlock:
+    #     soft: -1
+    #     hard: -1        
     environment:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms1g -Xmx1g"
