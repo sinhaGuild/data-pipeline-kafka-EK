@@ -11,6 +11,22 @@ Marketing team is getting very low LTR scores and beleives its primarily due to 
 
 # THE SETUP
 
+### Containers
+
+- Confluent KAFKA Single Broker Cluster
+- Confluent KAFKA Connect
+- KSQLDB
+- Zookeeper
+- Confluent Schema Registry
+- Elastic Search
+- Kibana
+- MSSQL (or MySQL) Marketing database
+- MSSQL server Finance Database
+
+All Containers are ran as part of a single _docker-compose.yml_ file and has been tested on ECS and Azure Event hubs.
+
+# BUILD
+
 We have a marketing database which hosts all the ratings. It can be seen here.
 
 ```bash
