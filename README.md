@@ -34,9 +34,7 @@ docker exec -it ksqldb ksql "http://localhost:8088"
 
 show topics;
 
-describe ratings;
-
-print ratings;
+print 'ratings';
 ```
 
 Lets sink this data into elastic search so we can have a look at it in Kibana.
@@ -146,6 +144,8 @@ CREATE TABLE CUSTOMERS (CUSTOMER_ID VARCHAR PRIMARY KEY)
 SET 'auto.offset.reset' = 'earliest';
 SELECT CUSTOMER_ID, FIRST_NAME, LAST_NAME, EMAIL, CLUB_STATUS FROM CUSTOMERS EMIT CHANGES LIMIT 5;
 
+--create live and test tables
+
 ```
 
 Now let's create a topic(stream), which outer joins ratings data with customer data using customer_id as primary key.
@@ -188,6 +188,9 @@ Observe in the continuous ksqlDB query that the customer name has now changed.
 Now let's create a stream of unhappy VIP's.
 
 ```sql
+-- reset
+SET 'auto.offset.reset' = 'earliest';
+
 CREATE STREAM UNHAPPY_PLATINUM_CUSTOMERS AS
 SELECT FULL_NAME, CLUB_STATUS, EMAIL, STARS, MESSAGE
 FROM   RATINGS_WITH_CUSTOMER_DATA
@@ -196,9 +199,18 @@ WHERE  STARS < 3
 PARTITION BY FULL_NAME;
 ```
 
+let's query this stream
+
+```sql
+SELECT STARS, MESSAGE, EMAIL FROM UNHAPPY_PLATINUM_CUSTOMERS EMIT CHANGES;
+```
+
 lets _sink_ this to elastic search so we can have a better look at it in kibana.
 
 ```sql
+-- reset
+SET 'auto.offset.reset' = 'earliest';
+
 CREATE SINK CONNECTOR SINK_ELASTIC_01 WITH (
   'connector.class' = 'io.confluent.connect.elasticsearch.ElasticsearchSinkConnector',
   'connection.url' = 'http://elasticsearch:9200',
@@ -230,15 +242,41 @@ Check data in elastic search
 docker exec elasticsearch curl -s "http://localhost:9200/_cat/indices/*?h=idx,docsCount"
 ```
 
-Lastly, let's build an aggregated _topic_ for my data-scientist pal over in marketing campaigns for research purposes - data has bidirectional benefits.
+Lastly, let's build an aggregated _topic_ for my data-scientist as with this setup we can create aggregates over all events to date or based on a time window.
+
+Supported types are:
+
+- Tumbling (e.g. every 5 minutes : 00:00, 00:05, 00:10)
+- Hopping (e.g. every 5 minutes, advancing 1 minute: 00:00-00:05, 00:01-00:06)
+- Session (Sets a timeout for the given key, after which any new data is treated as a new session)
 
 ```sql
+
+-- reset
+SET 'auto.offset.reset' = 'earliest';
+
+-- check the query
+SELECT TIMESTAMPTOSTRING(WINDOWSTART, 'yyyy-MM-dd HH:mm:ss') AS WINDOW_START_TS,
+            CLUB_STATUS, COUNT(*) AS RATING_COUNT
+        FROM RATINGS_WITH_CUSTOMER_DATA
+            WINDOW TUMBLING (SIZE 1 MINUTES)
+        GROUP BY CLUB_STATUS
+        EMIT CHANGES;
+
+
 CREATE TABLE RATINGS_PER_CUSTOMER_PER_15MINUTE AS
 SELECT FULL_NAME,COUNT(*) AS RATINGS_COUNT, COLLECT_LIST(STARS) AS RATINGS
   FROM RATINGS_WITH_CUSTOMER_DATA
         WINDOW TUMBLING (SIZE 15 MINUTE)
   GROUP BY FULL_NAME
   EMIT CHANGES;
+
+  CREATE TABLE RATINGS_BY_CLUB_STATUS AS
+        SELECT CLUB_STATUS, COUNT(*) AS RATING_COUNT
+        FROM RATINGS_WITH_CUSTOMER_DATA
+            WINDOW TUMBLING (SIZE 1 MINUTES)
+        GROUP BY CLUB_STATUS
+        EMIT CHANGES;
 ```
 
 And, let's _sink_ this into a mongo database.
