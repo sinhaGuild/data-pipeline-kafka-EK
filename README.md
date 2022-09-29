@@ -1,14 +1,48 @@
-![](https://img.rawpixel.com/private/static/images/website/2022-05/pdmonet-waterlilyrob-job582-2.jpg?w=800&dpr=1&fit=default&crop=default&q=65&vib=3&con=3&usm=15&bg=F4F4F3&s=b6b1c2f88fc8b1cf87439ffa079d030a)
+![](https://i.imgur.com/j0DltNW.gif)
 
-#### DEMO STORYBOARD
+# **INNOVATION AND PROBLEM SOLVING WITH DATA.**
+
+> Storyboard
+
+#### 1. Describe the core theme and use case
+
+#### 2. Describe desired outcomes
+
+#### 3. Framework
+
+#### 4. Solution (demo).
+
+---
+
+</br>
 
 # WHAT IS THE USE CASE
 
-Marketing team is getting very low LTR scores and beleives its primarily due to certain trends which should be evident from all the ratings and feedback we are getting but that data is currently sitting in an sql database in the marketing department.
+> ### Core Theme
+>
+> Improve customer experience and retention.
+
+> ### Specifics
+
+1. Marketing team has measured a decline of LTR (likelihood to recommend) score YOY .
+2. Ratings and feedback are bad. Alarming trends around new user acq & low retention.
+3. Customer loyalty programs have not helped.
+4. Data for ratings and feedback is available but has 2 limitations.
+
+- - Exists in several places (marketing, sales) with ambiguous quality.
+- - Analysis is slow (or not possible due to volume/infra) & has low shelf life.
+
+5. Customer information is available on-prem (SQL/Oracle database).
+
+> ### How do we win? (Describe the outcomes)
+
+1. Root cause / trend analysis. How do we wi> n?
+2. Use data to drive more real-time decisions to retain customers.
+3. Solution which can scale to similar/other challenges (roadmap).
 
 # THE SETUP
 
-### Containers
+> ### Containers
 
 - Confluent KAFKA Single Broker Cluster
 - Confluent KAFKA Connect
@@ -22,11 +56,16 @@ Marketing team is getting very low LTR scores and beleives its primarily due to 
 
 All Containers are ran as part of a single _docker-compose.yml_ file and has been tested on ECS and Azure Event hubs.
 
-# BUILD
+# DEMO
 
-We have a marketing database which hosts all the ratings. It can be seen here.
+We have a marketing database which hosts all the ratings. Its a simulated stream of events purporting to show the ratings left by users on a website, with data elements including the device type that they used, the star rating, and a message associated with the rating.
+
+> Note that we don't need to know the format of the data; KsqlDB introspects the data and understands how to deserialise it.
 
 ```bash
+docker compose up -d
+# for reruns, docker compose up -d --build --force-recreate
+
 docker exec -it ksqldb ksql "http://localhost:8088"
 
 show topics;
@@ -37,6 +76,7 @@ print 'ratings';
 Lets sink this data into elastic search so we can have a look at it in Kibana.
 
 ```sql
+-- Create sink connector
 CREATE SINK CONNECTOR SINK_ES_RATINGS WITH (
     'connector.class' = 'io.confluent.connect.elasticsearch.ElasticsearchSinkConnector',
     'topics'          = 'ratings',
@@ -50,7 +90,10 @@ CREATE SINK CONNECTOR SINK_ES_RATINGS WITH (
 );
 ```
 
-Let's create a _stream_ from this data set and deserialize the value part of the message (message has a key:pair) into AVRO
+> ## 2.1 Creating Streams
+
+Now let's _register_ this topic. Registering it will automatically create a schema for this topic in AVRO . Note that I didnt have to specify what column names etc. That’s because the data is in Avro format, and the Confluent Schema Registry supplies the actual schema details.
+Let's create a _stream_ from this data set and deserialize the value part of the message (message has a key:pair) into AVRO. You can use DESCRIBE to examine an object’s columns.
 
 ```sql
 CREATE STREAM RATINGS WITH (KAFKA_TOPIC='ratings',VALUE_FORMAT='AVRO');
@@ -60,12 +103,21 @@ describe ratings;
 
 Let's clean up this data as there's some sources which are marked as test. But instead of it being a SELECT statement, lets just create a new topic (ie. stream) which specifically has this dataset. Its cleaner and has higher likelihood of being useful to an ai worker.
 
+> ## 2.2 Continuous Query
+
 ```sql
 -- select users
 SELECT USER_ID, STARS, CHANNEL, MESSAGE FROM RATINGS EMIT CHANGES;
 
 -- remove test users
 SELECT USER_ID, STARS, CHANNEL, MESSAGE FROM RATINGS WHERE LCASE(CHANNEL) NOT LIKE '%test%' EMIT CHANGES;
+```
+
+You’ll notice that the data keeps on coming. That is because ksqlDB is fundamentally a streaming engine, and the queries that you run are continuous queries. We specified EMIT CHANGES which tells ksqlDB to output the changes to the stream, which is everytime a new event arrives.
+
+> ## 2.3 Filtering data
+
+```sql
 -- Create stream of live users
 CREATE STREAM RATINGS_LIVE AS
 SELECT * FROM RATINGS WHERE LCASE(CHANNEL) NOT LIKE '%test%' EMIT CHANGES;
@@ -78,6 +130,8 @@ SELECT * FROM RATINGS_TEST EMIT CHANGES LIMIT 5;
 -- extended description
 DESCRIBE EXTENDED RATINGS_LIVE
 ```
+
+> ## 2.4 KAFKA connect - Connecting to a DB
 
 Now lets ingest the customer table we have available from our internal systems of record. This could be an Oracle SQL server, of MS SQL Server - I'm using a mysql server here for simplicity sake but KAFKA can literllay connect to almost any CDC type.
 
@@ -131,7 +185,9 @@ SHOW TOPICS;
 PRINT 'asgard.demo.CUSTOMERS' FROM BEGINNING;
 ```
 
-We want to eventually join this data with ratings. So let's create a table from a select query just like we did last time.
+> ## 2.5 Joining data in realtime.
+
+Let’s use the customer data (CUSTOMERS) and use it to enrich the inbound stream of ratings data (RATINGS) to show against each rating who the customer is, and their club status ('platinum','gold', etc).
 
 ```sql
 CREATE TABLE CUSTOMERS (CUSTOMER_ID VARCHAR PRIMARY KEY)
@@ -140,10 +196,22 @@ CREATE TABLE CUSTOMERS (CUSTOMER_ID VARCHAR PRIMARY KEY)
 -- query the table.
 SET 'auto.offset.reset' = 'earliest';
 SELECT CUSTOMER_ID, FIRST_NAME, LAST_NAME, EMAIL, CLUB_STATUS FROM CUSTOMERS EMIT CHANGES LIMIT 5;
-
---create live and test tables
-
 ```
+
+Now just to prove that this is real time. Let's update this customer's name and see what happens.
+
+```sql
+INSERT INTO CUSTOMERS (ID,FIRST_NAME,LAST_NAME) VALUES (42,'Rick','Astley');
+UPDATE CUSTOMERS SET EMAIL = 'rick@example.com' where ID=42;
+UPDATE CUSTOMERS SET CLUB_STATUS = 'bronze' where ID=42;
+UPDATE CUSTOMERS SET CLUB_STATUS = 'platinum' where ID=42;
+```
+
+Observe in the continuous ksqlDB query that the customer name has now changed.
+
+> ## 2.6 Create enriched streams from joined data.
+>
+> Let’s persist this as an enriched stream, including a few more columns (including concatenating the two components of the name (FIRST_NAME and LAST_NAME)), by using CREATE STREAM … AS:
 
 Now let's create a topic(stream), which outer joins ratings data with customer data using customer_id as primary key.
 
@@ -164,7 +232,7 @@ EMIT CHANGES;
 
 Now, let's take a moment to appreciate what's happening here. We've just associated context to just a pile of data. What does that mean in practise.
 
-So for e.g. I can tell you in real time what a customer's rating is
+So for e.g. Check out the ratings for customer id 2 only from the new stream that we’ve created - note the CLUB_STATUS is platinum:
 
 ```sql
 SELECT TIMESTAMPTOSTRING(ROWTIME, 'HH:mm:ss') AS EVENT_TS,
@@ -174,15 +242,9 @@ SELECT TIMESTAMPTOSTRING(ROWTIME, 'HH:mm:ss') AS EVENT_TS,
   EMIT CHANGES;
 ```
 
-Now just to prove that this is real time. Let's update this customer's name and see what happens.
-
-```sql
-UPDATE CUSTOMERS SET CLUB_STATUS = 'bronze' WHERE ID=2;
-```
-
-Observe in the continuous ksqlDB query that the customer name has now changed.
-
-Now let's create a stream of unhappy VIP's.
+> ## 2.7 Unhappy VIPs
+>
+> Having enriched the initial stream of ratings events with customer data, we can now persist a filtered version of that stream that includes a predicate to identify just those VIP customers who have left bad reviews:
 
 ```sql
 -- reset
@@ -196,13 +258,15 @@ WHERE  STARS < 3
 PARTITION BY FULL_NAME;
 ```
 
-let's query this stream
+Now we can query the derived stream to easily identify important customers who are not happy.
 
 ```sql
 SELECT STARS, MESSAGE, EMAIL FROM UNHAPPY_PLATINUM_CUSTOMERS EMIT CHANGES;
 ```
 
-lets _sink_ this to elastic search so we can have a better look at it in kibana.
+> ## 2.8 Visualize unhappy customers
+>
+> Since this is backed by a Kafka topic being continually popuated by ksqlDB we can also drive other applications with this data, as well as land it to datastores down-stream for visualisation. lets _sink_ this to elastic search/Kibana for rapid visualisation and analysis.
 
 ```sql
 -- reset
@@ -239,7 +303,20 @@ Check data in elastic search
 docker exec elasticsearch curl -s "http://localhost:9200/_cat/indices/*?h=idx,docsCount"
 ```
 
-Lastly, let's build an aggregated _topic_ for my data-scientist as with this setup we can create aggregates over all events to date or based on a time window.
+> ## 2.9 Launch Kibana
+
+```
+...url/app/kibana#/dashboard/mysql-ksql-kafka-es
+
+Navigate in Kibana > Dashboards > Ratings
+
+```
+
+Note that this is being fed with live events—if you click the Refresh button you’ll see it updates with up-to-the-second data. By default the dashboard shows the last 15 minutes of events.
+
+> ## 2.10 Bonus! (Little something for the Data scientists)
+>
+> Lastly, let's build an aggregated _topic_ for my data-scientist as with this setup we can create aggregates over all events to date or based on a time window.
 
 Supported types are:
 
@@ -263,17 +340,17 @@ SELECT TIMESTAMPTOSTRING(WINDOWSTART, 'yyyy-MM-dd HH:mm:ss') AS WINDOW_START_TS,
 
 CREATE TABLE RATINGS_PER_CUSTOMER_PER_15MINUTE AS
 SELECT FULL_NAME,COUNT(*) AS RATINGS_COUNT, COLLECT_LIST(STARS) AS RATINGS
-  FROM RATINGS_WITH_CUSTOMER_DATA
-        WINDOW TUMBLING (SIZE 15 MINUTE)
+FROM RATINGS_WITH_CUSTOMER_DATA
+  WINDOW TUMBLING (SIZE 15 MINUTE)
   GROUP BY FULL_NAME
   EMIT CHANGES;
 
-  CREATE TABLE RATINGS_BY_CLUB_STATUS AS
-        SELECT CLUB_STATUS, COUNT(*) AS RATING_COUNT
-        FROM RATINGS_WITH_CUSTOMER_DATA
-            WINDOW TUMBLING (SIZE 1 MINUTES)
-        GROUP BY CLUB_STATUS
-        EMIT CHANGES;
+CREATE TABLE RATINGS_BY_CLUB_STATUS AS
+SELECT CLUB_STATUS, COUNT(*) AS RATING_COUNT
+FROM RATINGS_WITH_CUSTOMER_DATA
+  WINDOW TUMBLING (SIZE 1 MINUTES)
+  GROUP BY CLUB_STATUS
+  EMIT CHANGES;
 ```
 
 And, let's _sink_ this into a mongo database.
@@ -291,3 +368,5 @@ And, let's _sink_ this into a mongo database.
   }
 }
 ```
+
+![](https://i.imgur.com/YbGoCEq.gif)
